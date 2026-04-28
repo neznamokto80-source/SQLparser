@@ -33,7 +33,6 @@ from PyQt6.QtWidgets import (
 )
 
 from core.export_manager import ExportManager
-from core.lineage_graph import build_lineage_graph, render_graph_to_bytes, render_graph_to_file
 from core.sql_parser import ParserFactory, SQLDialect
 from models.sql_metadata import SQLMetadata
 from ui.help_text import HELP_TEXT
@@ -209,6 +208,89 @@ class MainWindow(QMainWindow):
         self.metadata: Optional[SQLMetadata] = None
         self.current_dialect = SQLDialect.ORACLE
         self.export_manager = ExportManager()
+        self.example_index = 0  # индекс текущего примера SQL
+        self.examples = [
+            # Пример 1: сложный запрос с несколькими алиасами
+            """-- Пример сложного SQL запроса с несколькими алиасами
+SELECT
+    u.id AS user_id,
+    u.name AS user_name,
+    u.email,
+    d.department_name,
+    COUNT(o.order_id) as total_orders,
+    SUM(o.amount) as total_amount,
+    AVG(o.amount) as avg_order_amount
+FROM users u
+INNER JOIN departments d ON u.dept_id = d.id
+LEFT JOIN orders o ON u.id = o.user_id
+LEFT JOIN (SELECT table2.t2, table2.t3 FROM table2) tt ON tt.t2 = o.user_id
+LEFT JOIN table3 t3a ON t3a.id = u.id
+LEFT JOIN table3 t3b ON t3b.id = d.id
+WHERE u.active = 1
+    AND d.location IN ('Moscow', 'Saint-Petersburg')
+    AND o.order_date >= DATE '2023-01-01'
+GROUP BY u.id, u.name, u.email, d.department_name
+HAVING COUNT(o.order_id) > 5
+    AND SUM(o.amount) > 10000
+ORDER BY total_amount DESC, user_name ASC""",
+            # Пример 2: линейный вариант с оконными функциями и скользящим средним
+            """-- Линейный вариант: топ-3 сотрудников по отделам + скользящее среднее (3 последних по дате найма)
+WITH
+-- 1. Скользящее среднее зарплаты (3 последних сотрудника в отделе по hire_date)
+moving_avg AS (
+    SELECT
+        e1.employee_id,
+        AVG(e2.salary) AS moving_avg_salary
+    FROM employees e1
+    JOIN employees e2
+        ON e1.department_id = e2.department_id
+        AND e2.hire_date <= e1.hire_date
+    WHERE (
+        SELECT COUNT(*)
+        FROM employees e3
+        WHERE e3.department_id = e1.department_id
+          AND e3.hire_date BETWEEN e2.hire_date AND e1.hire_date
+    ) <= 3   -- последние 3 сотрудника (включая текущего)
+    GROUP BY e1.employee_id
+),
+-- 2. Максимальная зарплата по отделу
+dept_max AS (
+    SELECT department_id, MAX(salary) AS max_salary
+    FROM employees
+    GROUP BY department_id
+),
+-- 3. Ранжирование по зарплате внутри отдела (топ-N без оконных функций)
+emp_rank AS (
+    SELECT
+        e.employee_id,
+        e.first_name,
+        e.last_name,
+        e.department_id,
+        e.salary,
+        e.hire_date,
+        d.department_name,
+        dm.max_salary,
+        (SELECT COUNT(*)
+         FROM employees e2
+         WHERE e2.department_id = e.department_id
+           AND e2.salary > e.salary) + 1 AS rank_in_dept
+    FROM employees e
+    JOIN departments d ON e.department_id = d.department_id
+    JOIN dept_max dm ON e.department_id = dm.department_id
+    WHERE e.hire_date >= ADD_MONTHS(SYSDATE, -:months_back)
+)
+SELECT
+    er.department_name,
+    er.employee_id,
+    er.last_name,
+    er.salary,
+    ma.moving_avg_salary,
+    er.max_salary - er.salary AS diff_from_max
+FROM emp_rank er
+LEFT JOIN moving_avg ma ON er.employee_id = ma.employee_id
+WHERE er.rank_in_dept <= :top_n
+ORDER BY er.department_name, er.rank_in_dept;"""
+        ]
         self._setup_ui()
         self._apply_styles()
 
@@ -347,7 +429,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._lineage_tab(), "Линедж")
         self.tabs.addTab(self._stats_tab(), "Статистика")
         self.tabs.addTab(self._text_output_tab(), "Текстовый вывод")
-        self.tabs.addTab(self._lineage_graph_tab(), "Граф зависимостей")
         layout.addWidget(self.tabs)
 
         actions = QHBoxLayout()
@@ -355,11 +436,6 @@ class MainWindow(QMainWindow):
         copy_btn.clicked.connect(self.copy_to_clipboard)
         actions.addWidget(copy_btn)
         actions.addStretch()
-
-        graph_btn = QPushButton("📈 Граф")
-        graph_btn.clicked.connect(self.generate_lineage_graph)
-        graph_btn.setToolTip("Построить граф зависимостей колонок")
-        actions.addWidget(graph_btn)
 
         csv_btn = QPushButton("📊 Экспорт CSV")
         csv_btn.clicked.connect(lambda: self.export_data("csv"))
@@ -443,79 +519,6 @@ class MainWindow(QMainWindow):
         self.text_output.setFont(QFont("Courier New", 10))
         l.addWidget(self.text_output)
         return w
-
-    def _lineage_graph_tab(self) -> QWidget:
-        """Создание вкладки с визуализацией графа зависимостей колонок."""
-        w = QWidget()
-        l = QVBoxLayout(w)
-        
-        # Панель управления
-        controls = QHBoxLayout()
-        self.graph_generate_btn = QPushButton("🔄 Сгенерировать граф")
-        self.graph_generate_btn.clicked.connect(self.generate_lineage_graph)
-        self.graph_generate_btn.setToolTip("Построить граф зависимостей на основе текущих метаданных")
-        controls.addWidget(self.graph_generate_btn)
-        controls.addStretch()
-        
-        # Кнопка сохранения
-        self.graph_save_btn = QPushButton("💾 Сохранить как PNG")
-        self.graph_save_btn.clicked.connect(self.save_lineage_graph)
-        self.graph_save_btn.setToolTip("Сохранить граф в файл PNG")
-        controls.addWidget(self.graph_save_btn)
-        l.addLayout(controls)
-        
-        # Область прокрутки для изображения графа
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        self.graph_label = QLabel("Граф будет сгенерирован после анализа SQL.")
-        self.graph_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.graph_label.setStyleSheet("background-color: white; padding: 20px;")
-        scroll.setWidget(self.graph_label)
-        l.addWidget(scroll)
-        
-        return w
-
-    def generate_lineage_graph(self) -> None:
-        """Генерирует граф зависимостей колонок и отображает его во вкладке."""
-        if not self.metadata:
-            QMessageBox.warning(self, "Внимание", "Нет данных для построения графа. Сначала проанализируйте SQL запрос.")
-            return
-        
-        try:
-            from core.lineage_graph import render_graph_to_bytes
-            image_data = render_graph_to_bytes(self.metadata)
-            pixmap = QPixmap()
-            pixmap.loadFromData(image_data)
-            # Масштабируем для удобного просмотра
-            scaled = pixmap.scaledToWidth(800, Qt.TransformationMode.SmoothTransformation)
-            self.graph_label.setPixmap(scaled)
-            self.graph_label.setText("")
-            self.status_bar.showMessage("Граф успешно построен", 3000)
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось построить граф:\n{str(e)}")
-            self.status_bar.showMessage("Ошибка построения графа", 5000)
-
-    def save_lineage_graph(self) -> None:
-        """Сохраняет текущий граф в файл PNG."""
-        if not self.metadata:
-            QMessageBox.warning(self, "Внимание", "Нет данных для сохранения графа.")
-            return
-        
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Сохранить граф как PNG",
-            "",
-            "PNG Images (*.png);;All Files (*)"
-        )
-        if not file_path:
-            return
-        
-        try:
-            render_graph_to_file(self.metadata, file_path, output_format="png")
-            self.status_bar.showMessage(f"Граф сохранён в {file_path}", 3000)
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить граф:\n{str(e)}")
-            self.status_bar.showMessage("Ошибка сохранения графа", 5000)
 
     def _apply_styles(self) -> None:
         self.setStyleSheet(
@@ -1001,31 +1004,15 @@ class MainWindow(QMainWindow):
         self.info_label.setText(f"Скопировано строк: {len(self.metadata.column_analysis)}")
 
     def load_example(self) -> None:
-        """Загружает пример сложного SQL запроса в поле ввода."""
-        self.sql_input.setPlainText(
-            """-- Пример сложного SQL запроса с несколькими алиасами
-SELECT
-    u.id AS user_id,
-    u.name AS user_name,
-    u.email,
-    d.department_name,
-    COUNT(o.order_id) as total_orders,
-    SUM(o.amount) as total_amount,
-    AVG(o.amount) as avg_order_amount
-FROM users u
-INNER JOIN departments d ON u.dept_id = d.id
-LEFT JOIN orders o ON u.id = o.user_id
-LEFT JOIN (SELECT table2.t2, table2.t3 FROM table2) tt ON tt.t2 = o.user_id
-LEFT JOIN table3 t3a ON t3a.id = u.id
-LEFT JOIN table3 t3b ON t3b.id = d.id
-WHERE u.active = 1
-    AND d.location IN ('Moscow', 'Saint-Petersburg')
-    AND o.order_date >= DATE '2023-01-01'
-GROUP BY u.id, u.name, u.email, d.department_name
-HAVING COUNT(o.order_id) > 5
-    AND SUM(o.amount) > 10000
-ORDER BY total_amount DESC, user_name ASC"""
-        )
+        """Загружает пример SQL запроса в поле ввода, циклически переключаясь между примерами."""
+        if not self.examples:
+            return
+        example = self.examples[self.example_index]
+        self.sql_input.setPlainText(example)
+        # Увеличиваем индекс для следующего нажатия
+        self.example_index = (self.example_index + 1) % len(self.examples)
+        # Показываем подсказку в статусной строке
+        self.status_bar.showMessage(f"Загружен пример {self.example_index + 1} из {len(self.examples)}")
 
     def load_from_file(self) -> None:
         """Загружает SQL запрос из файла."""
