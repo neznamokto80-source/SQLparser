@@ -1,9 +1,0 @@
-[
-  "tests/test_column_analysis.py::test_alias_list_contains_only_real_aliases",
-  "tests/test_column_analysis.py::test_calculation_detection_and_type",
-  "tests/test_column_analysis.py::test_cte_and_subquery_processing",
-  "tests/test_column_analysis.py::test_join_using_columns_not_ignored",
-  "tests/test_column_analysis.py::test_usage_contexts_and_counts_for_complex_query",
-  "tests/test_sql_preprocessor.py::test_preprocessor_removes_comments_and_keeps_select",
-  "tests/test_sql_preprocessor.py::test_preprocessor_replaces_convert_and_to_date"
-]

@@ -193,7 +193,13 @@ class ParseWorker(QThread):
             self.progress_update.emit(100, "Готово")
             self.parse_complete.emit(metadata)
         except Exception as exc:
-            self.parse_error.emit(str(exc))
+            import traceback
+            error_msg = str(exc)
+            traceback_str = traceback.format_exc()
+            # Печать в консоль для отладки
+            print(f"ParseWorker error: {error_msg}")
+            print(traceback_str)
+            self.parse_error.emit(error_msg)
 
 
 class MainWindow(QMainWindow):

@@ -10,8 +10,6 @@ required_modules = [
     ("sqlglot", "sqlglot", "sqlglot>=24.0.0"),
     ("openpyxl", "openpyxl", "openpyxl>=3.1.0"),
     ("pandas", "pandas", "pandas>=2.0.0"),
-    ("networkx", "networkx", "networkx>=3.0"),
-    ("matplotlib", "matplotlib", "matplotlib>=3.7"),
 ]
 
 import subprocess
