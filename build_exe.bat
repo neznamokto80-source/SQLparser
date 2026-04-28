@@ -114,8 +114,11 @@ if exist "dist\%OUTPUT_EXE_NAME%" (
 echo.
 echo Cleaning temporary files...
 if exist "build_temp" rmdir /s /q "build_temp" 2>nul
+if exist "build" rmdir /s /q "build" 2>nul
 if exist "%OUTPUT_EXE_NAME%.spec" del "%OUTPUT_EXE_NAME%.spec" 2>nul
 if exist "__pycache__" rmdir /s /q "__pycache__" 2>nul
+for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d" 2>nul
+if exist "*.log" del "*.log" 2>nul
 
 echo.
 echo ============================================
