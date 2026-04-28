@@ -140,31 +140,63 @@ class DetailedColumnAnalyzer:
         self.select_aliases.add(alias_name)
 
         source_columns = list(alias_node.this.find_all(exp.Column))
-        if not source_columns:
-            return
-
         alias_is_calculation = self._expression_is_calculation(alias_node.this)
 
-        for src in source_columns:
-            source_key, source_table_alias = self._resolve_column_key(src)
-            if not source_key:
-                continue
+        # Если выражение является вычислением, создаём отдельную вычисляемую колонку
+        if alias_is_calculation:
+            # Уникальный ключ для вычисляемой колонки
+            calc_key = f"CALC.{alias_name}"
+            if calc_key not in self.columns:
+                meta = ColumnMetadata(
+                    column_name=alias_name,
+                    table=None,
+                    table_alias=None,
+                    full_name=alias_name,
+                    aliases=[alias_name],
+                    is_calculation=True,
+                    calculation_type=self._calculation_type(alias_node.this),
+                    calculation_expression=alias_node.this.sql(),
+                )
+                meta.usage_count = 1
+                meta.usage_locations.append("SELECT")
+                self.columns[calc_key] = meta
+            else:
+                meta = self.columns[calc_key]
+                meta.usage_count += 1
+                if "SELECT" not in meta.usage_locations:
+                    meta.usage_locations.append("SELECT")
 
-            meta = self._get_or_create_column(source_key, source_table_alias)
-            if alias_name not in meta.column_aliases:
-                meta.column_aliases.append(alias_name)
-            if alias_name not in meta.aliases:
-                meta.aliases.append(alias_name)
+            # Добавляем зависимости от всех исходных колонок в выражении
+            for src in source_columns:
+                source_key, _ = self._resolve_column_key(src)
+                if source_key and source_key not in meta.dependencies:
+                    meta.dependencies.append(source_key)
 
-            # Map ORDER BY alias -> source only for direct/non-calculated aliases (e.g. u.id AS user_id).
-            if not alias_is_calculation:
+            # Маппинг алиаса на вычисляемую колонку для ORDER BY и других контекстов
+            self.column_alias_to_source[alias_name] = calc_key
+
+        else:
+            # Простой алиас для одной или нескольких колонок (например, u.id AS user_id)
+            # Обрабатываем каждую исходную колонку
+            for src in source_columns:
+                source_key, source_table_alias = self._resolve_column_key(src)
+                if not source_key:
+                    continue
+
+                meta = self._get_or_create_column(source_key, source_table_alias)
+                if alias_name not in meta.column_aliases:
+                    meta.column_aliases.append(alias_name)
+                if alias_name not in meta.aliases:
+                    meta.aliases.append(alias_name)
+
+                # Map ORDER BY alias -> source only for direct/non-calculated aliases
                 self.column_alias_to_source.setdefault(alias_name, source_key)
 
-            calc, calc_parent = self._is_calculation_column(src)
-            if calc:
-                meta.is_calculation = True
-                meta.calculation_type = self._calculation_type(calc_parent)
-                meta.calculation_expression = calc_parent.sql() if calc_parent else alias_node.this.sql()
+                calc, calc_parent = self._is_calculation_column(src)
+                if calc:
+                    meta.is_calculation = True
+                    meta.calculation_type = self._calculation_type(calc_parent)
+                    meta.calculation_expression = calc_parent.sql() if calc_parent else alias_node.this.sql()
 
     def _process_column(self, column_node: exp.Column) -> None:
         key, table_alias = self._resolve_column_key(column_node)

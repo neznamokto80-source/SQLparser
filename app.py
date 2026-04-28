@@ -43,25 +43,6 @@ if missing:
         print("Пожалуйста, установите зависимости вручную:", file=sys.stderr)
         print(f"  pip install {' '.join(missing)}", file=sys.stderr)
         
-        # Попытка показать всплывающее окно с ошибкой
-        try:
-            from PyQt6.QtWidgets import QApplication, QMessageBox
-            # Создаём временное приложение
-            app = QApplication(sys.argv)
-            msg_box = QMessageBox()
-            msg_box.setIcon(QMessageBox.Icon.Critical)
-            msg_box.setWindowTitle("Ошибка установки зависимостей")
-            msg_box.setText("Не удалось автоматически установить необходимые библиотеки.")
-            msg_box.setInformativeText(
-                f"Отсутствуют: {', '.join(missing)}\n\n"
-                "Установите их вручную через командную строку:\n"
-                f"pip install {' '.join(missing)}"
-            )
-            msg_box.exec()
-        except Exception:
-            # Если не удалось создать GUI, просто выходим
-            pass
-        sys.exit(1)
 
 from ui.main_window import MainWindow
 
