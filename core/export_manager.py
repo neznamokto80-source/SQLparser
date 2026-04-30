@@ -279,6 +279,166 @@ class JSONExportStrategy(ExportStrategy):
         return [".json"]
 
 
+class CSVExportStrategy(ExportStrategy):
+    """Стратегия экспорта в CSV (таблицы и колонки в отдельные файлы)."""
+
+    def export(self, metadata: SQLMetadata, file_path: str, **kwargs) -> bool:
+        """Экспортирует метаданные в CSV файлы.
+
+        Создаёт два файла:
+            - <basename>_tables.csv: таблицы
+            - <basename>_columns.csv: колонки
+
+        Args:
+            metadata: Объект SQLMetadata.
+            file_path: Путь к основному файлу CSV (будет использован для генерации имён).
+            **kwargs: Дополнительные параметры (не используются).
+
+        Returns:
+            True, если экспорт успешен, иначе False.
+        """
+        try:
+            import pandas as pd
+            import os
+
+            base, _ = os.path.splitext(file_path)
+            tables_path = f"{base}_tables.csv"
+            columns_path = f"{base}_columns.csv"
+
+            # Таблицы
+            tables_data = []
+            for table in metadata.get_unique_tables():
+                tables_data.append({
+                    "Схема": table.schema or "",
+                    "Имя таблицы": table.name,
+                    "Алиасы": table.get_aliases_str(),
+                    "Тип таблицы": table.table_type.value,
+                    "Тип JOIN": table.join_type or "",
+                    "Колонки": ", ".join(table.columns) if table.columns else ""
+                })
+            if tables_data:
+                df_tables = pd.DataFrame(tables_data)
+                df_tables.to_csv(tables_path, index=False, encoding='utf-8-sig')
+            else:
+                # Создать пустой файл
+                with open(tables_path, 'w', encoding='utf-8-sig') as f:
+                    f.write("Схема,Имя таблицы,Алиасы,Тип таблицы,Тип JOIN,Колонки\n")
+
+            # Колонки
+            columns_data = []
+            for col in metadata.columns:
+                table = col.table or ""
+                schema = ""
+                table_name_without_schema = table
+                object_type = ""
+                if table:
+                    if "." in table:
+                        parts = table.split(".", 1)
+                        schema = parts[0]
+                        table_name_without_schema = parts[1]
+                    # Ищем таблицу в метаданных
+                    found_table = None
+                    if schema:
+                        found_table = metadata.get_table_by_name(table_name_without_schema, schema)
+                    if not found_table:
+                        # Поиск по имени без схемы (первая подходящая)
+                        for t in metadata.get_unique_tables():
+                            if t.name == table_name_without_schema:
+                                found_table = t
+                                break
+                    if found_table:
+                        object_type = found_table.table_type.value
+                        # Если схема не была извлечена из table, возьмём из found_table
+                        if not schema:
+                            schema = found_table.schema or ""
+                columns_data.append({
+                    "Схема": schema,
+                    "Таблица": table_name_without_schema,
+                    "Алиас таблицы": col.table_alias or "",
+                    "Тип объекта": object_type,
+                    "Имя колонки": col.column_name,
+                    "Полное имя": col.full_name or "",
+                    "Тип вычисления": col.calculation_type or "",
+                    "Использование": ", ".join(col.usage_locations) if col.usage_locations else "",
+                    "Количество использований": col.usage_count
+                })
+            if columns_data:
+                df_columns = pd.DataFrame(columns_data)
+                df_columns.to_csv(columns_path, index=False, encoding='utf-8-sig')
+            else:
+                with open(columns_path, 'w', encoding='utf-8-sig') as f:
+                    f.write("Схема,Таблица,Алиас таблицы,Тип объекта,Имя колонки,Полное имя,Тип вычисления,Использование,Количество использований\n")
+
+            return True
+        except Exception:
+            return False
+
+    def get_file_extensions(self) -> List[str]:
+        """Возвращает поддерживаемые расширения файлов CSV.
+
+        Returns:
+            Список [".csv"].
+        """
+        return [".csv"]
+
+
+class TextExportStrategy(ExportStrategy):
+    """Стратегия экспорта в текстовый файл (plain text)."""
+
+    def export(self, metadata: SQLMetadata, file_path: str, **kwargs) -> bool:
+        """Экспортирует метаданные в текстовый файл.
+
+        Формат аналогичен вкладке "Текстовый вывод".
+
+        Args:
+            metadata: Объект SQLMetadata.
+            file_path: Путь к файлу.
+            **kwargs: Дополнительные параметры (не используются).
+
+        Returns:
+            True, если экспорт успешен, иначе False.
+        """
+        try:
+            from datetime import datetime
+            text = f"=== РЕЗУЛЬТАТЫ ПАРСИНГА SQL ===\n"
+            text += f"Дата анализа: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            text += f"Диалект SQL: {kwargs.get('dialect', 'ORACLE')}\n\n"
+
+            # Уникальные таблицы
+            text += "=== УНИКАЛЬНЫЕ ТАБЛИЦЫ ===\n"
+            for i, table in enumerate(metadata.get_unique_tables(), 1):
+                aliases_info = f" (алиасы: {table.get_aliases_str()})" if table.aliases else ""
+                join_info = f" [{table.join_type}]" if table.join_type else ""
+                text += f"{i}. {table.schema or ''}.{table.name}{aliases_info} - {table.table_type.value}{join_info}\n"
+            text += f"\nВсего уникальных таблиц: {len(metadata.get_unique_tables())}\n\n"
+
+            # Детальная информация о колонках
+            text += "=== ДЕТАЛЬНЫЕ РЕЗУЛЬТАТЫ ===\n\n"
+            for i, col in enumerate(metadata.columns, 1):
+                text += f"{i}. Колонка: {col.column_name}\n"
+                text += f"   Таблица: {col.table or ''} "
+                text += f"(Алиас: {col.table_alias or ''})\n"
+                text += f"   Полное имя: {col.full_name or ''}\n"
+                text += f"   Вычисление: {col.calculation_type or 'нет'}\n"
+                filtered_locations = [loc for loc in col.usage_locations if loc.lower() != "calculation"]
+                text += f"   Использование: {', '.join(filtered_locations) if filtered_locations else 'нет'}\n"
+                text += f"{'-'*40}\n"
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(text)
+            return True
+        except Exception:
+            return False
+
+    def get_file_extensions(self) -> List[str]:
+        """Возвращает поддерживаемые расширения файлов текста.
+
+        Returns:
+            Список [".txt"].
+        """
+        return [".txt"]
+
+
 class ExportManager:
     """Менеджер экспорта, который выбирает стратегию по расширению файла или имени."""
 
@@ -287,6 +447,8 @@ class ExportManager:
         self._strategies: Dict[str, ExportStrategy] = {
             "excel": ExcelExportStrategy(),
             "json": JSONExportStrategy(),
+            "csv": CSVExportStrategy(),
+            "text": TextExportStrategy(),
         }
 
     def export(self, metadata: SQLMetadata, file_path: str, strategy_name: Optional[str] = None, **kwargs) -> bool:
@@ -295,7 +457,7 @@ class ExportManager:
         Args:
             metadata: Объект SQLMetadata.
             file_path: Путь к файлу для сохранения.
-            strategy_name: Имя стратегии ("excel", "json"). Если None, определяется по расширению файла.
+            strategy_name: Имя стратегии ("excel", "json", "csv", "text"). Если None, определяется по расширению файла.
             **kwargs: Дополнительные параметры, передаваемые стратегии.
 
         Returns:

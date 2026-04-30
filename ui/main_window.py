@@ -1061,11 +1061,42 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         """Копирует сводку колонок в буфер обмена в формате TSV."""
         if not self.metadata:
             return
-        rows = ["Полное имя\tАлиасы\tТаблица\tГде используется\tКоличество упоминаний"]
+        rows = ["Полное имя\tСхема\tТаблица\tАлиас таблицы\tТип объекта\tАлиасы\tГде используется\tКоличество упоминаний"]
         for col in self.metadata.column_analysis:
+            # Извлекаем схему, имя таблицы и тип объекта (аналогично _populate_result_views)
+            table = col.table or ""
+            schema = ""
+            table_name_without_schema = table
+            object_type = ""
+            if table:
+                if "." in table:
+                    parts = table.split(".", 1)
+                    schema = parts[0]
+                    table_name_without_schema = parts[1]
+                # Ищем таблицу в метаданных
+                found_table = None
+                if schema:
+                    found_table = self.metadata.get_table_by_name(table_name_without_schema, schema)
+                if not found_table:
+                    # Поиск по имени без схемы (первая подходящая)
+                    for t in self.metadata.get_unique_tables():
+                        if t.name == table_name_without_schema:
+                            found_table = t
+                            break
+                if found_table:
+                    object_type = found_table.table_type.value
+                    # Если схема не была извлечена из table, возьмём из found_table
+                    if not schema:
+                        schema = found_table.schema or ""
             rows.append(
-                f"{col.full_name}\t{col.get_aliases_str()}\t{col.table or ''}\t"
-                f"{', '.join(col.usage_locations)}\t{col.usage_count}"
+                f"{col.full_name or ''}\t"
+                f"{schema}\t"
+                f"{table_name_without_schema}\t"
+                f"{col.table_alias or ''}\t"
+                f"{object_type}\t"
+                f"{col.get_aliases_str()}\t"
+                f"{', '.join(col.usage_locations)}\t"
+                f"{col.usage_count}"
             )
         QApplication.clipboard().setText("\n".join(rows))
         self.status_bar.showMessage("Скопировано в буфер обмена")
