@@ -37,14 +37,16 @@ class ScopeInfo:
 class DetailedColumnAnalyzer:
     """Detailed analyzer for columns, aliases and usage contexts."""
 
-    def __init__(self, ast: exp.Expression):
+    def __init__(self, ast: exp.Expression, original_sql: Optional[str] = None):
         """
         Initialize analyzer with a sqlglot AST.
 
         Args:
             ast: Root node of the sqlglot AST (usually a Select expression).
+            original_sql: Optional original SQL string for detecting Oracle (+) syntax.
         """
         self.ast = ast
+        self.original_sql = original_sql
         self.columns: Dict[str, ColumnMetadata] = {}
         self.tables: Dict[Tuple[Optional[str], str, TableType], TableInfo] = {}
         self.column_alias_to_source: Dict[str, str] = {}
@@ -53,6 +55,31 @@ class DetailedColumnAnalyzer:
         self.cte_column_map: Dict[Tuple[str, str], str] = {}
         self.source_alias_hints: Dict[str, Set[str]] = {}
         self.select_aliases: Set[str] = set()
+
+    def _detect_oracle_outer_join(self) -> Dict[str, str]:
+        """Обнаруживает Oracle-синтаксис (+) для outer join и возвращает словарь
+        {имя_таблицы: тип_join}."""
+        if not self.original_sql:
+            return {}
+        sql = self.original_sql.upper()
+        # Простой поиск: находим все вхождения "(+)" и извлекаем предшествующее имя столбца
+        import re
+        # Шаблон для column(+) или table.column(+)
+        pattern = r'([A-Z0-9_]+(?:\.[A-Z0-9_]+)?)\s*\(\+\)'
+        matches = re.findall(pattern, sql)
+        result = {}
+        for column_spec in matches:
+            # column_spec может быть "DEPT.DEPTNO" или "DEPTNO"
+            if '.' in column_spec:
+                table = column_spec.split('.')[0]
+            else:
+                # Без таблицы - невозможно определить, пропускаем
+                continue
+            # Определяем тип JOIN: если (+) справа от оператора сравнения, то LEFT JOIN,
+            # если слева - RIGHT JOIN. Упрощённо: считаем LEFT JOIN.
+            # Можно улучшить, анализируя контекст, но для простоты используем LEFT JOIN.
+            result[table] = "LEFT JOIN"
+        return result
 
     def analyze(self) -> Tuple[List[ColumnMetadata], List[TableInfo], str]:
         """
@@ -82,6 +109,9 @@ class DetailedColumnAnalyzer:
         return columns, list(self.tables.values()), self._render_columns_sample(columns)
 
     def _collect_tables(self) -> None:
+        # Детектирование Oracle outer join синтаксиса (+)
+        oracle_join_types = self._detect_oracle_outer_join()
+        
         for cte in self.ast.find_all(exp.CTE):
             cte_name = cte.alias_or_name
             if cte_name:
@@ -92,7 +122,16 @@ class DetailedColumnAnalyzer:
             schema = table.db
             alias = table.alias_or_name if table.alias else None
             table_type = TableType.CTE if self._is_cte_table(name) else TableType.TABLE
-            self._upsert_table(name, schema, alias, table_type)
+            join_type = self._get_join_type_for_table(table)
+            # Если join_type не определён через AST или это INNER JOIN (который может быть Oracle outer join),
+            # проверяем Oracle-синтаксис
+            if join_type is None or join_type == "INNER JOIN":
+                # Проверяем сначала по алиасу, потом по имени таблицы
+                if alias and alias.upper() in oracle_join_types:
+                    join_type = oracle_join_types[alias.upper()]
+                elif name.upper() in oracle_join_types:
+                    join_type = oracle_join_types[name.upper()]
+            self._upsert_table(name, schema, alias, table_type, join_type)
 
         for subquery in self.ast.find_all(exp.Subquery):
             alias = subquery.alias_or_name
@@ -565,12 +604,39 @@ class DetailedColumnAnalyzer:
                 return table
         return None
 
+    def _get_join_type_for_table(self, table_node: exp.Table) -> Optional[str]:
+        """Определяет тип JOIN для таблицы, если она участвует в JOIN.
+        
+        Args:
+            table_node: Узел exp.Table.
+            
+        Returns:
+            Строка с типом JOIN (например, "LEFT JOIN", "INNER JOIN") или None.
+        """
+        parent = table_node.parent
+        while parent:
+            if isinstance(parent, exp.Join):
+                side = parent.side  # "LEFT", "RIGHT", ""
+                kind = parent.kind  # "INNER", "OUTER", ""
+                if side and kind:
+                    return f"{side} {kind} JOIN"
+                elif side:
+                    return f"{side} JOIN"
+                elif kind:
+                    return f"{kind} JOIN"
+                else:
+                    # JOIN без указания типа по умолчанию является INNER JOIN
+                    return "INNER JOIN"
+            parent = parent.parent
+        return None
+
     def _upsert_table(
         self,
         name: str,
         schema: Optional[str],
         alias: Optional[str],
         table_type: TableType,
+        join_type: Optional[str] = None,
     ) -> None:
         # Нормализация: пустая строка -> None
         if schema == "":
@@ -581,6 +647,8 @@ class DetailedColumnAnalyzer:
         if key not in self.tables:
             self.tables[key] = TableInfo(name=name, schema=schema, table_type=table_type)
         self.tables[key].add_alias(alias)
+        if join_type and self.tables[key].join_type is None:
+            self.tables[key].join_type = join_type
 
     def _render_columns_sample(self, columns: List[ColumnMetadata]) -> str:
         lines = [

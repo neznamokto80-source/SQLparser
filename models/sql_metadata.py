@@ -109,12 +109,14 @@ class TableInfo:
         aliases: Множество алиасов таблицы (например, {"u", "usr"}).
         table_type: Тип таблицы (см. TableType).
         columns: Множество полных имён колонок, принадлежащих таблице.
+        join_type: Тип JOIN, если таблица участвует в JOIN (например, "LEFT JOIN", "INNER JOIN").
     """
     name: str
     schema: Optional[str] = None
     aliases: Set[str] = field(default_factory=set)
     table_type: TableType = TableType.TABLE
     columns: Set[str] = field(default_factory=set)
+    join_type: Optional[str] = None
 
     def add_alias(self, alias: Optional[str]) -> None:
         """Добавляет алиас таблицы.
@@ -154,6 +156,7 @@ class TableInfo:
             "aliases": sorted(self.aliases),
             "type": self.table_type.value,
             "column_count": len(self.columns),
+            "join_type": self.join_type,
         }
 
 

@@ -69,7 +69,7 @@ class SQLGlotParserStrategy(ParserStrategy):
         try:
             processed_sql = self.preprocessor.preprocess(sql)
             ast = parse_one(processed_sql, dialect=dialect_to_sqlglot(self.dialect))
-            analyzer = DetailedColumnAnalyzer(ast)
+            analyzer = DetailedColumnAnalyzer(ast, original_sql=sql)
             columns, tables, sample_output = analyzer.analyze()
             metadata.columns = columns
             metadata.tables = tables

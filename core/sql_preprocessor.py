@@ -32,7 +32,7 @@ class SQLPreprocessor:
         - Replace TO_DATE functions with CAST('2000-01-01' AS DATE)
         - Replace variable functions (e.g., @func()) with empty string
         - Handle star operator (`*`) to avoid parsing errors
-        - Remove square brackets (`[`, `]`)
+        - Normalize identifier quoting (square brackets to dialect‑appropriate quotes)
         - Fix common whitespace and punctuation issues
 
         Args:
@@ -103,9 +103,64 @@ class SQLPreprocessor:
         return sql
 
     def _remove_square_brackets(self, sql: str) -> str:
-        sql = sql.replace("[", "")
-        sql = sql.replace("]", "")
-        return sql
+        """
+        Replace square brackets outside string literals with appropriate quoting.
+        For T-SQL keep brackets, for MySQL use backticks, for others double quotes.
+        """
+        # Состояния: 0 - вне кавычек, 1 - внутри одинарных кавычек, 2 - внутри двойных кавычек
+        state = 0
+        result = []
+        i = 0
+        while i < len(sql):
+            ch = sql[i]
+            if ch == "'" and state == 0:
+                state = 1
+                result.append(ch)
+            elif ch == "'" and state == 1:
+                # Проверяем экранирование: следующая кавычка?
+                if i + 1 < len(sql) and sql[i + 1] == "'":
+                    result.append(ch)
+                    i += 1
+                    result.append(sql[i])
+                else:
+                    state = 0
+                    result.append(ch)
+            elif ch == '"' and state == 0:
+                state = 2
+                result.append(ch)
+            elif ch == '"' and state == 2:
+                if i + 1 < len(sql) and sql[i + 1] == '"':
+                    result.append(ch)
+                    i += 1
+                    result.append(sql[i])
+                else:
+                    state = 0
+                    result.append(ch)
+            elif ch == '[' and state == 0:
+                # Нашли открывающую скобку вне кавычек
+                # Ищем закрывающую
+                j = i + 1
+                while j < len(sql) and sql[j] != ']':
+                    j += 1
+                if j < len(sql):
+                    identifier = sql[i+1:j]
+                    if self.dialect == SQLDialect.SQLSERVER:
+                        result.append(f'[{identifier}]')
+                    elif self.dialect == SQLDialect.MYSQL:
+                        result.append(f'`{identifier}`')
+                    else:
+                        result.append(f'"{identifier}"')
+                    i = j  # пропускаем закрывающую скобку
+                else:
+                    # нет закрывающей, оставляем как есть
+                    result.append(ch)
+            elif ch == ']' and state == 0:
+                # Закрывающая скобка вне кавычек без открывающей? пропускаем
+                result.append(ch)
+            else:
+                result.append(ch)
+            i += 1
+        return ''.join(result)
 
     def _fix_common_issues(self, sql: str) -> str:
         sql = re.sub(r"\s+", " ", sql)

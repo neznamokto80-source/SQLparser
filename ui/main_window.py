@@ -430,8 +430,8 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         layout.addLayout(filter_layout)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(self._tables_tab(), "Таблицы")
         self.tabs.addTab(self._columns_tab(), "Колонки")
+        self.tabs.addTab(self._tables_tab(), "Таблицы")
         self.tabs.addTab(self._lineage_tab(), "Линедж")
         self.tabs.addTab(self._stats_tab(), "Статистика")
         self.tabs.addTab(self._text_output_tab(), "Текстовый вывод")
@@ -465,12 +465,14 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         w = QWidget()
         l = QVBoxLayout(w)
         self.tables_tree = QTreeWidget()
-        self.tables_tree.setHeaderLabels(["Схема", "Таблица", "Алиасы", "Тип", "Колонок"])
+        self.tables_tree.setHeaderLabels(["Схема", "Таблица", "Алиасы", "Тип", "Колонок", "Тип JOIN"])
         self.tables_tree.setSortingEnabled(True)
         self.tables_tree.setColumnWidth(0, 110)
         self.tables_tree.setColumnWidth(1, 190)
         self.tables_tree.setColumnWidth(2, 200)
         self.tables_tree.setColumnWidth(3, 130)
+        self.tables_tree.setColumnWidth(4, 80)
+        self.tables_tree.setColumnWidth(5, 120)
         self.tables_tree.setColumnWidth(4, 90)
         l.addWidget(self.tables_tree)
         return w
@@ -480,16 +482,17 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         l = QVBoxLayout(w)
         self.columns_tree = QTreeWidget()
         self.columns_tree.setHeaderLabels(
-            ["Полное имя колонки", "Схема", "Таблица", "Алиас таблицы", "Алиасы", "Где используется", "Количество упоминаний"]
+            ["Полное имя колонки", "Схема", "Таблица", "Алиас таблицы", "Тип объекта", "Алиасы", "Где используется", "Количество упоминаний"]
         )
         self.columns_tree.setSortingEnabled(True)
         self.columns_tree.setColumnWidth(0, 220)
         self.columns_tree.setColumnWidth(1, 80)
         self.columns_tree.setColumnWidth(2, 120)
         self.columns_tree.setColumnWidth(3, 100)
-        self.columns_tree.setColumnWidth(4, 180)
-        self.columns_tree.setColumnWidth(5, 200)
-        self.columns_tree.setColumnWidth(6, 140)
+        self.columns_tree.setColumnWidth(4, 100)  # Тип объекта
+        self.columns_tree.setColumnWidth(5, 180)  # Алиасы
+        self.columns_tree.setColumnWidth(6, 200)  # Где используется
+        self.columns_tree.setColumnWidth(7, 140)  # Количество упоминаний
         l.addWidget(self.columns_tree)
         return w
 
@@ -527,7 +530,8 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         return w
 
     def _apply_styles(self) -> None:
-        self.setStyleSheet(
+        app = QApplication.instance()
+        app.setStyleSheet(
             """
             QMainWindow {
                 background-color: #f5f7fa;
@@ -625,6 +629,25 @@ ORDER BY er.department_name, er.rank_in_dept;"""
             QLabel {
                 font-size: 11px;
             }
+            QMessageBox {
+                background-color: #f5f7fa;
+                color: #2c3e50;
+            }
+            QMessageBox QLabel {
+                color: #2c3e50;
+            }
+            QMessageBox QPushButton {
+                background-color: #f8fafc;
+                color: #2c3e50;
+                border: 1px solid #d1d9e6;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-size: 11px;
+            }
+            QMessageBox QPushButton:hover {
+                background-color: #e8f4fc;
+                border-color: #3498db;
+            }
             """
         )
 
@@ -635,7 +658,8 @@ ORDER BY er.department_name, er.rank_in_dept;"""
             state: Состояние чекбокса (2 для Qt.CheckState.Checked).
         """
         if state == 2:  # Qt.CheckState.Checked
-            self.setStyleSheet(
+            app = QApplication.instance()
+            app.setStyleSheet(
                 """
                 QMainWindow {
                     background-color: #2b2b2b;
@@ -743,6 +767,25 @@ ORDER BY er.department_name, er.rank_in_dept;"""
                 QCheckBox {
                     color: #e0e0e0;
                 }
+                QMessageBox {
+                    background-color: #2b2b2b;
+                    color: #e0e0e0;
+                }
+                QMessageBox QLabel {
+                    color: #e0e0e0;
+                }
+                QMessageBox QPushButton {
+                    background-color: #555555;
+                    color: #e0e0e0;
+                    border: 1px solid #555555;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    font-size: 11px;
+                }
+                QMessageBox QPushButton:hover {
+                    background-color: #666666;
+                    border-color: #007acc;
+                }
                 """
             )
         else:
@@ -830,22 +873,40 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         for col in self.metadata.column_analysis:
             column_row = QTreeWidgetItem(self.columns_tree)
             column_row.setText(0, col.full_name or "")
-            # Извлекаем схему и имя таблицы
+            # Извлекаем схему, имя таблицы и тип объекта
             table = col.table or ""
             schema = ""
             table_name_without_schema = table
-            if table and "." in table:
-                parts = table.split(".", 1)
-                schema = parts[0]
-                table_name_without_schema = parts[1]
+            object_type = ""
+            if table:
+                if "." in table:
+                    parts = table.split(".", 1)
+                    schema = parts[0]
+                    table_name_without_schema = parts[1]
+                # Ищем таблицу в метаданных (сначала по схеме, если нет - по имени)
+                found_table = None
+                if schema:
+                    found_table = self.metadata.get_table_by_name(table_name_without_schema, schema)
+                if not found_table:
+                    # Поиск по имени без схемы (первая подходящая)
+                    for t in self.metadata.get_unique_tables():
+                        if t.name == table_name_without_schema:
+                            found_table = t
+                            break
+                if found_table:
+                    object_type = found_table.table_type.value
+                    # Если схема не была извлечена из table, возьмём из found_table
+                    if not schema:
+                        schema = found_table.schema or ""
             column_row.setText(1, schema)
             column_row.setText(2, table_name_without_schema)
             column_row.setText(3, col.table_alias or "")
-            column_row.setText(4, col.get_aliases_str())
+            column_row.setText(4, object_type)  # Тип объекта
+            column_row.setText(5, col.get_aliases_str())
             # Фильтруем "calculation" из usage_locations
             filtered_locations = [loc for loc in col.usage_locations if loc.lower() != "calculation"]
-            column_row.setText(5, ", ".join(filtered_locations))
-            column_row.setText(6, str(col.usage_count))
+            column_row.setText(6, ", ".join(filtered_locations))
+            column_row.setText(7, str(col.usage_count))
 
             lineage_row = QTreeWidgetItem(self.lineage_tree)
             lineage_row.setText(0, col.column_name)
@@ -863,6 +924,7 @@ ORDER BY er.department_name, er.rank_in_dept;"""
             item.setText(2, table.get_aliases_str())
             item.setText(3, table.table_type.value)
             item.setText(4, str(len(table.columns)))
+            item.setText(5, table.join_type or "")
 
         stats = self.metadata.get_statistics()
         lines = [
@@ -1041,4 +1103,58 @@ ORDER BY er.department_name, er.rank_in_dept;"""
 
     def show_help(self) -> None:
         """Отображение окна справки."""
-        QMessageBox.information(self, "Справка", HELP_TEXT)
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Справка")
+        msg_box.setText(HELP_TEXT)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.Ok)
+        
+        # Применяем стиль в зависимости от темы
+        if self.dark_theme_checkbox.isChecked():
+            # Стиль для тёмной темы
+            msg_box.setStyleSheet("""
+                QMessageBox {
+                    background-color: #2b2b2b;
+                    color: #e0e0e0;
+                }
+                QMessageBox QLabel {
+                    color: #e0e0e0;
+                }
+                QMessageBox QPushButton {
+                    background-color: #555555;
+                    color: #e0e0e0;
+                    border: 1px solid #555555;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    font-size: 11px;
+                }
+                QMessageBox QPushButton:hover {
+                    background-color: #666666;
+                    border-color: #007acc;
+                }
+            """)
+        else:
+            # Стиль для светлой темы
+            msg_box.setStyleSheet("""
+                QMessageBox {
+                    background-color: #f5f7fa;
+                    color: #2c3e50;
+                }
+                QMessageBox QLabel {
+                    color: #2c3e50;
+                }
+                QMessageBox QPushButton {
+                    background-color: #f8fafc;
+                    color: #2c3e50;
+                    border: 1px solid #d1d9e6;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    font-size: 11px;
+                }
+                QMessageBox QPushButton:hover {
+                    background-color: #e8f4fc;
+                    border-color: #3498db;
+                }
+            """)
+        
+        msg_box.exec()

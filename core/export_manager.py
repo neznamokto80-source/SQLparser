@@ -71,7 +71,49 @@ class ExcelExportStrategy(ExportStrategy):
                 return [loc for loc in locations if loc.lower() != "calculation"]
 
             with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
-                # Лист "Таблицы"
+                # Лист "Колонки" (первый)
+                columns_data = []
+                for c in metadata.columns:
+                    table = c.table or ""
+                    schema = ""
+                    table_name_without_schema = table
+                    object_type = ""
+                    # Попробуем найти таблицу в метаданных
+                    if table:
+                        # Разделяем схему и имя, если есть точка
+                        if "." in table:
+                            parts = table.split(".", 1)
+                            schema = parts[0]
+                            table_name_without_schema = parts[1]
+                        # Ищем таблицу в метаданных (сначала по схеме, если нет - по имени)
+                        found_table = None
+                        if schema:
+                            found_table = metadata.get_table_by_name(table_name_without_schema, schema)
+                        if not found_table:
+                            # Поиск по имени без схемы (первая подходящая)
+                            for t in metadata.get_unique_tables():
+                                if t.name == table_name_without_schema:
+                                    found_table = t
+                                    break
+                        if found_table:
+                            object_type = found_table.table_type.value
+                            # Если схема не была извлечена из table, возьмём из found_table
+                            if not schema:
+                                schema = found_table.schema or ""
+                    columns_data.append({
+                        "Полное имя колонки": c.full_name or "",
+                        "Схема": schema,
+                        "Таблица": table_name_without_schema,
+                        "Алиас таблицы": c.table_alias or "",
+                        "Тип объекта": object_type,
+                        "Алиасы": c.get_aliases_str(),
+                        "Где используется": ", ".join(filter_calculation(c.usage_locations)),
+                        "Количество упоминаний": c.usage_count,
+                    })
+                columns_df = pd.DataFrame(columns_data)
+                columns_df.to_excel(writer, sheet_name="Колонки", index=False)
+
+                # Лист "Таблицы" (второй)
                 tables_df = pd.DataFrame(
                     [
                         {
@@ -80,33 +122,12 @@ class ExcelExportStrategy(ExportStrategy):
                             "Алиасы": t.get_aliases_str(),
                             "Тип": t.table_type.value,
                             "Колонок": len(t.columns),
+                            "Тип JOIN": t.join_type or "",
                         }
                         for t in metadata.get_unique_tables()
                     ]
                 )
                 tables_df.to_excel(writer, sheet_name="Таблицы", index=False)
-
-                # Лист "Колонки"
-                columns_data = []
-                for c in metadata.columns:
-                    table = c.table or ""
-                    schema = ""
-                    table_name_without_schema = table
-                    if table and "." in table:
-                        parts = table.split(".", 1)
-                        schema = parts[0]
-                        table_name_without_schema = parts[1]
-                    columns_data.append({
-                        "Полное имя колонки": c.full_name or "",
-                        "Схема": schema,
-                        "Таблица": table_name_without_schema,
-                        "Алиас таблицы": c.table_alias or "",
-                        "Алиасы": c.get_aliases_str(),
-                        "Где используется": ", ".join(filter_calculation(c.usage_locations)),
-                        "Количество упоминаний": c.usage_count,
-                    })
-                columns_df = pd.DataFrame(columns_data)
-                columns_df.to_excel(writer, sheet_name="Колонки", index=False)
 
                 # Лист "Линедж"
                 lineage_df = pd.DataFrame(
@@ -153,7 +174,8 @@ class ExcelExportStrategy(ExportStrategy):
                 text_lines.append("=== УНИКАЛЬНЫЕ ТАБЛИЦЫ ===")
                 for i, table in enumerate(metadata.get_unique_tables(), 1):
                     aliases_info = f" (алиасы: {table.get_aliases_str()})" if table.aliases else ""
-                    text_lines.append(f"{i}. {table.schema or ''}.{table.name}{aliases_info} - {table.table_type.value}")
+                    join_info = f" [{table.join_type}]" if table.join_type else ""
+                    text_lines.append(f"{i}. {table.schema or ''}.{table.name}{aliases_info} - {table.table_type.value}{join_info}")
                 text_lines.append(f"Всего уникальных таблиц: {len(metadata.get_unique_tables())}")
                 text_lines.append("")
                 text_lines.append("=== ДЕТАЛЬНЫЕ РЕЗУЛЬТАТЫ ===")
