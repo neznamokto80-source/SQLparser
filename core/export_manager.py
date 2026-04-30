@@ -101,6 +101,7 @@ class ExcelExportStrategy(ExportStrategy):
                             if not schema:
                                 schema = found_table.schema or ""
                     columns_data.append({
+                        "Колонка": c.column_name or "",
                         "Полное имя колонки": c.full_name or "",
                         "Схема": schema,
                         "Таблица": table_name_without_schema,
@@ -352,11 +353,11 @@ class CSVExportStrategy(ExportStrategy):
                         if not schema:
                             schema = found_table.schema or ""
                 columns_data.append({
+                    "Колонка": col.column_name,
                     "Схема": schema,
                     "Таблица": table_name_without_schema,
                     "Алиас таблицы": col.table_alias or "",
                     "Тип объекта": object_type,
-                    "Имя колонки": col.column_name,
                     "Полное имя": col.full_name or "",
                     "Тип вычисления": col.calculation_type or "",
                     "Использование": ", ".join(col.usage_locations) if col.usage_locations else "",
@@ -367,7 +368,7 @@ class CSVExportStrategy(ExportStrategy):
                 df_columns.to_csv(columns_path, index=False, encoding='utf-8-sig')
             else:
                 with open(columns_path, 'w', encoding='utf-8-sig') as f:
-                    f.write("Схема,Таблица,Алиас таблицы,Тип объекта,Имя колонки,Полное имя,Тип вычисления,Использование,Количество использований\n")
+                    f.write("Колонка,Схема,Таблица,Алиас таблицы,Тип объекта,Полное имя,Тип вычисления,Использование,Количество использований\n")
 
             return True
         except Exception:

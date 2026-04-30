@@ -482,17 +482,18 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         l = QVBoxLayout(w)
         self.columns_tree = QTreeWidget()
         self.columns_tree.setHeaderLabels(
-            ["Полное имя колонки", "Схема", "Таблица", "Алиас таблицы", "Тип объекта", "Алиасы", "Где используется", "Количество упоминаний"]
+            ["Колонка", "Полное имя колонки", "Схема", "Таблица", "Алиас таблицы", "Тип объекта", "Алиасы", "Где используется", "Количество упоминаний"]
         )
         self.columns_tree.setSortingEnabled(True)
-        self.columns_tree.setColumnWidth(0, 220)
-        self.columns_tree.setColumnWidth(1, 80)
-        self.columns_tree.setColumnWidth(2, 120)
-        self.columns_tree.setColumnWidth(3, 100)
-        self.columns_tree.setColumnWidth(4, 100)  # Тип объекта
-        self.columns_tree.setColumnWidth(5, 180)  # Алиасы
-        self.columns_tree.setColumnWidth(6, 200)  # Где используется
-        self.columns_tree.setColumnWidth(7, 140)  # Количество упоминаний
+        self.columns_tree.setColumnWidth(0, 120)   # Колонка
+        self.columns_tree.setColumnWidth(1, 220)   # Полное имя колонки
+        self.columns_tree.setColumnWidth(2, 80)    # Схема
+        self.columns_tree.setColumnWidth(3, 120)   # Таблица
+        self.columns_tree.setColumnWidth(4, 100)   # Алиас таблицы
+        self.columns_tree.setColumnWidth(5, 100)   # Тип объекта
+        self.columns_tree.setColumnWidth(6, 180)   # Алиасы
+        self.columns_tree.setColumnWidth(7, 200)   # Где используется
+        self.columns_tree.setColumnWidth(8, 140)   # Количество упоминаний
         l.addWidget(self.columns_tree)
         return w
 
@@ -872,7 +873,8 @@ ORDER BY er.department_name, er.rank_in_dept;"""
 
         for col in self.metadata.column_analysis:
             column_row = QTreeWidgetItem(self.columns_tree)
-            column_row.setText(0, col.full_name or "")
+            column_row.setText(0, col.column_name or "")          # Колонка
+            column_row.setText(1, col.full_name or "")            # Полное имя колонки
             # Извлекаем схему, имя таблицы и тип объекта
             table = col.table or ""
             schema = ""
@@ -898,15 +900,15 @@ ORDER BY er.department_name, er.rank_in_dept;"""
                     # Если схема не была извлечена из table, возьмём из found_table
                     if not schema:
                         schema = found_table.schema or ""
-            column_row.setText(1, schema)
-            column_row.setText(2, table_name_without_schema)
-            column_row.setText(3, col.table_alias or "")
-            column_row.setText(4, object_type)  # Тип объекта
-            column_row.setText(5, col.get_aliases_str())
+            column_row.setText(2, schema)                         # Схема
+            column_row.setText(3, table_name_without_schema)      # Таблица
+            column_row.setText(4, col.table_alias or "")          # Алиас таблицы
+            column_row.setText(5, object_type)                    # Тип объекта
+            column_row.setText(6, col.get_aliases_str())          # Алиасы
             # Фильтруем "calculation" из usage_locations
             filtered_locations = [loc for loc in col.usage_locations if loc.lower() != "calculation"]
-            column_row.setText(6, ", ".join(filtered_locations))
-            column_row.setText(7, str(col.usage_count))
+            column_row.setText(7, ", ".join(filtered_locations))  # Где используется
+            column_row.setText(8, str(col.usage_count))           # Количество упоминаний
 
             lineage_row = QTreeWidgetItem(self.lineage_tree)
             lineage_row.setText(0, col.column_name)
@@ -1061,7 +1063,7 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         """Копирует сводку колонок в буфер обмена в формате TSV."""
         if not self.metadata:
             return
-        rows = ["Полное имя\tСхема\tТаблица\tАлиас таблицы\tТип объекта\tАлиасы\tГде используется\tКоличество упоминаний"]
+        rows = ["Колонка\tПолное имя\tСхема\tТаблица\tАлиас таблицы\tТип объекта\tАлиасы\tГде используется\tКоличество упоминаний"]
         for col in self.metadata.column_analysis:
             # Извлекаем схему, имя таблицы и тип объекта (аналогично _populate_result_views)
             table = col.table or ""
@@ -1089,6 +1091,7 @@ ORDER BY er.department_name, er.rank_in_dept;"""
                     if not schema:
                         schema = found_table.schema or ""
             rows.append(
+                f"{col.column_name or ''}\t"
                 f"{col.full_name or ''}\t"
                 f"{schema}\t"
                 f"{table_name_without_schema}\t"
