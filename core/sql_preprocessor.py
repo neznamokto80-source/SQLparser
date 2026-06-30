@@ -67,19 +67,19 @@ class SQLPreprocessor:
 
     def _replace_convert_functions(self, sql: str) -> str:
         convert_patterns = [
-            (r"\bCONVERT\s*\(\s*datetime\s*,\s*([^,]+)\s*(?:,\s*\d+\s*)?\)", r"CAST(\1 AS datetime)"),
-            (r"\bCONVERT\s*\(\s*date\s*,\s*([^,]+)\s*(?:,\s*\d+\s*)?\)", r"CAST(\1 AS date)"),
-            (r"\bCONVERT\s*\(\s*smalldatetime\s*,\s*([^,]+)\s*(?:,\s*\d+\s*)?\)", r"CAST(\1 AS smalldatetime)"),
-            (r"\bCONVERT\s*\(\s*datetime2\s*,\s*([^,]+)\s*(?:,\s*\d+\s*)?\)", r"CAST(\1 AS datetime2)"),
+            (r"\bCONVERT\s*\(\s*datetime\s*,\s*([^,)]+)\s*(?:,\s*\d+\s*)?\)", r"CAST(\1 AS datetime)"),
+            (r"\bCONVERT\s*\(\s*date\s*,\s*([^,)]+)\s*(?:,\s*\d+\s*)?\)", r"CAST(\1 AS date)"),
+            (r"\bCONVERT\s*\(\s*smalldatetime\s*,\s*([^,)]+)\s*(?:,\s*\d+\s*)?\)", r"CAST(\1 AS smalldatetime)"),
+            (r"\bCONVERT\s*\(\s*datetime2\s*,\s*([^,)]+)\s*(?:,\s*\d+\s*)?\)", r"CAST(\1 AS datetime2)"),
             (
-                r"\bCONVERT\s*\(\s*(numeric|decimal)\s*\(\s*\d+\s*,\s*\d+\s*\)\s*,\s*([^,]+)\s*(?:,\s*\d+\s*)?\)",
+                r"\bCONVERT\s*\(\s*(numeric|decimal)\s*\(\s*\d+\s*,\s*\d+\s*\)\s*,\s*([^,)]+)\s*(?:,\s*\d+\s*)?\)",
                 r"CAST(\2 AS \1)",
             ),
             (
-                r"\bCONVERT\s*\(\s*(var)?char\s*\(\s*\d+\s*\)\s*,\s*([^,]+)\s*(?:,\s*\d+\s*)?\)",
+                r"\bCONVERT\s*\(\s*(var)?char\s*\(\s*\d+\s*\)\s*,\s*([^,)]+)\s*(?:,\s*\d+\s*)?\)",
                 r"CAST(\2 AS \1char)",
             ),
-            (r"\bCONVERT\s*\(\s*(\w+)\s*,\s*([^,]+)\s*\)", r"CAST(\2 AS \1)"),
+            (r"\bCONVERT\s*\(\s*(\w+)\s*,\s*([^,)]+)\s*\)", r"CAST(\2 AS \1)"),
         ]
         return self._apply_patterns(sql, convert_patterns)
 
@@ -167,6 +167,7 @@ class SQLPreprocessor:
         sql = sql.replace(", ,", ",")
         sql = sql.replace(",.", ",")
         sql = re.sub(r'^"', "", sql)
+        sql = re.sub(r'\s+\)', ')', sql)
         return sql.strip()
 
     def validate_sql(self, sql: str) -> tuple[bool, Optional[str]]:
