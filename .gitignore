@@ -59,3 +59,4 @@ for_exe/dist/
 for_exe/*.spec
 *.exe
 *.msi
+.mimocode/.cron-lock

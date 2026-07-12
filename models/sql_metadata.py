@@ -14,6 +14,7 @@ class TableType(Enum):
     SUBQUERY = "Подзапрос"
     CTE = "CTE"
     VIEW = "Представление"
+    PROCEDURE = "Процедура"
     UNKNOWN = "Неизвестно"
 
 
@@ -178,6 +179,8 @@ class SQLMetadata:
     parse_errors: List[str] = field(default_factory=list)
     json_schema: Dict[str, Any] = field(default_factory=dict)
     sample_columns_output: str = ""
+    procedures: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    table_functions: Dict[str, str] = field(default_factory=dict)
 
     def add_column(self, column: ColumnMetadata) -> None:
         """Добавляет колонку в метаданные.

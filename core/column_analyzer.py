@@ -51,6 +51,8 @@ class DetailedColumnAnalyzer:
         self.tables: Dict[Tuple[Optional[str], str, TableType], TableInfo] = {}
         self.column_alias_to_source: Dict[str, str] = {}
         self.scope_by_select_id: Dict[int, ScopeInfo] = {}
+        self._cte_names: Set[str] = set()
+        self._table_name_index: Dict[str, TableInfo] = {}
         self.subquery_column_map: Dict[Tuple[str, str], str] = {}
         self.cte_column_map: Dict[Tuple[str, str], str] = {}
         self.source_alias_hints: Dict[str, Set[str]] = {}
@@ -75,9 +77,6 @@ class DetailedColumnAnalyzer:
             else:
                 # Без таблицы - невозможно определить, пропускаем
                 continue
-            # Определяем тип JOIN: если (+) справа от оператора сравнения, то LEFT JOIN,
-            # если слева - RIGHT JOIN. Упрощённо: считаем LEFT JOIN.
-            # Можно улучшить, анализируя контекст, но для простоты используем LEFT JOIN.
             result[table] = "LEFT JOIN"
         return result
 
@@ -111,15 +110,22 @@ class DetailedColumnAnalyzer:
     def _collect_tables(self) -> None:
         # Детектирование Oracle outer join синтаксиса (+)
         oracle_join_types = self._detect_oracle_outer_join()
-        
+
+        # Collect CTE names for fast lookup
         for cte in self.ast.find_all(exp.CTE):
             cte_name = cte.alias_or_name
             if cte_name:
+                self._cte_names.add(cte_name)
                 self._upsert_table(cte_name, None, cte_name, TableType.CTE)
 
         for table in self.ast.find_all(exp.Table):
             name = table.name
             schema = table.db
+            # Handle catalog.schema notation
+            if table.catalog and schema:
+                schema = f"{table.catalog}.{schema}"
+            elif table.catalog:
+                schema = table.catalog
             alias = table.alias_or_name if table.alias else None
             table_type = TableType.CTE if self._is_cte_table(name) else TableType.TABLE
             join_type = self._get_join_type_for_table(table)
@@ -462,7 +468,7 @@ class DetailedColumnAnalyzer:
                 cte_column_key = f"{relation_alias}.{output_name}"
                 expr_for_calc = expression.this if isinstance(expression, exp.Alias) else expression
                 is_calculation = self._expression_is_calculation(expr_for_calc)
-                
+
                 if cte_column_key in self.columns:
                     # Обновляем существующую колонку
                     meta = self.columns[cte_column_key]
@@ -494,7 +500,7 @@ class DetailedColumnAnalyzer:
                     table_obj = self._find_table_by_name(relation_alias)
                     if table_obj:
                         table_obj.add_column(cte_column_key)
-                
+
                 # Добавляем зависимости на все исходные колонки в выражении
                 for col in expr_for_calc.find_all(exp.Column):
                     col_key, _ = self._resolve_column_key(col)
@@ -593,23 +599,17 @@ class DetailedColumnAnalyzer:
         return None
 
     def _is_cte_table(self, table_name: str) -> bool:
-        for cte in self.ast.find_all(exp.CTE):
-            if cte.alias_or_name == table_name:
-                return True
-        return False
+        return table_name in self._cte_names
 
     def _find_table_by_name(self, table_name: str) -> Optional[TableInfo]:
-        for (_, name, _), table in self.tables.items():
-            if name == table_name:
-                return table
-        return None
+        return self._table_name_index.get(table_name)
 
     def _get_join_type_for_table(self, table_node: exp.Table) -> Optional[str]:
         """Определяет тип JOIN для таблицы, если она участвует в JOIN.
-        
+
         Args:
             table_node: Узел exp.Table.
-            
+
         Returns:
             Строка с типом JOIN (например, "LEFT JOIN", "INNER JOIN") или None.
         """
@@ -646,6 +646,7 @@ class DetailedColumnAnalyzer:
         key = (schema, name, table_type)
         if key not in self.tables:
             self.tables[key] = TableInfo(name=name, schema=schema, table_type=table_type)
+            self._table_name_index[name] = self.tables[key]
         self.tables[key].add_alias(alias)
         if join_type and self.tables[key].join_type is None:
             self.tables[key].join_type = join_type

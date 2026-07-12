@@ -1,5 +1,5 @@
 """
-PyQt6 main window for SQL Metadata Parser v4.0.
+PyQt6 main window for SQL Metadata Parser v5.0.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -25,6 +26,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QTabWidget,
+    QTextBrowser,
     QTextEdit,
     QTreeWidget,
     QTreeWidgetItem,
@@ -35,7 +37,7 @@ from PyQt6.QtWidgets import (
 from core.export_manager import ExportManager
 from core.sql_parser import ParserFactory, SQLDialect
 from models.sql_metadata import SQLMetadata
-from ui.help_text import HELP_TEXT
+from ui.help_text import HELP_TEXT, CHANGELOG_TEXT, USER_GUIDE_TEXT, README_TEXT
 
 
 class SQLHighlighter(QSyntaxHighlighter):
@@ -301,7 +303,7 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         self._apply_styles()
 
     def _setup_ui(self) -> None:
-        self.setWindowTitle("SQL Metadata Parser v4.0")
+        self.setWindowTitle("SQL Metadata Parser v5.0")
         screen = QApplication.primaryScreen()
         if screen is not None:
             available = screen.availableGeometry()
@@ -930,7 +932,7 @@ ORDER BY er.department_name, er.rank_in_dept;"""
 
         stats = self.metadata.get_statistics()
         lines = [
-            "SQL Metadata Parser v4.0",
+            "SQL Metadata Parser v5.0",
             "",
             f"Всего колонок: {stats.get('total_columns', 0)}",
             f"Всего таблиц: {stats.get('total_tables', 0)}",
@@ -1136,25 +1138,87 @@ ORDER BY er.department_name, er.rank_in_dept;"""
         self.info_label.setText("Поле очищено. Введите SQL запрос.")
 
     def show_help(self) -> None:
-        """Отображение окна справки."""
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Справка")
-        msg_box.setText(HELP_TEXT)
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        msg_box.setDefaultButton(QMessageBox.StandardButton.Ok)
-        
-        # Применяем стиль в зависимости от темы
+        """Отображение окна справки с вкладками Справка и ChangeLog."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Справка — SQL Metadata Parser v5.0")
+        dialog.setMinimumSize(750, 580)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        tabs = QTabWidget()
+
+        # Вкладка "Справка"
+        help_browser = QTextBrowser()
+        help_browser.setPlainText(HELP_TEXT)
+        help_browser.setFont(QFont("Arial", 10))
+        help_browser.setOpenExternalLinks(False)
+        tabs.addTab(help_browser, "Справка")
+
+        # Вкладка "Руководство"
+        guide_browser = QTextBrowser()
+        guide_browser.setPlainText(USER_GUIDE_TEXT)
+        guide_browser.setFont(QFont("Arial", 10))
+        guide_browser.setOpenExternalLinks(False)
+        tabs.addTab(guide_browser, "Руководство")
+
+        # Вкладка "ChangeLog"
+        changelog_browser = QTextBrowser()
+        changelog_browser.setPlainText(CHANGELOG_TEXT)
+        changelog_browser.setFont(QFont("Courier New", 9))
+        changelog_browser.setOpenExternalLinks(False)
+        tabs.addTab(changelog_browser, "ChangeLog")
+
+        # Вкладка "README"
+        readme_browser = QTextBrowser()
+        readme_browser.setPlainText(README_TEXT)
+        readme_browser.setFont(QFont("Courier New", 9))
+        readme_browser.setOpenExternalLinks(False)
+        tabs.addTab(readme_browser, "README")
+
+        layout.addWidget(tabs)
+
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+
+        # Стиль в зависимости от темы
         if self.dark_theme_checkbox.isChecked():
-            # Стиль для тёмной темы
-            msg_box.setStyleSheet("""
-                QMessageBox {
+            dialog.setStyleSheet("""
+                QDialog {
                     background-color: #2b2b2b;
                     color: #e0e0e0;
                 }
-                QMessageBox QLabel {
-                    color: #e0e0e0;
+                QTabWidget::pane {
+                    border: 1px solid #555555;
+                    background-color: #3c3c3c;
                 }
-                QMessageBox QPushButton {
+                QTabBar::tab {
+                    background-color: #555555;
+                    color: #e0e0e0;
+                    border: 1px solid #555555;
+                    border-bottom: none;
+                    padding: 8px 16px;
+                    margin-right: 2px;
+                    border-top-left-radius: 4px;
+                    border-top-right-radius: 4px;
+                }
+                QTabBar::tab:selected {
+                    background-color: #3c3c3c;
+                    border-bottom: 2px solid #007acc;
+                    font-weight: bold;
+                }
+                QTabBar::tab:hover {
+                    background-color: #666666;
+                }
+                QTextBrowser {
+                    background-color: #3c3c3c;
+                    color: #e0e0e0;
+                    border: 1px solid #555555;
+                    border-radius: 4px;
+                    padding: 8px;
+                }
+                QPushButton {
                     background-color: #555555;
                     color: #e0e0e0;
                     border: 1px solid #555555;
@@ -1162,22 +1226,46 @@ ORDER BY er.department_name, er.rank_in_dept;"""
                     padding: 8px 16px;
                     font-size: 11px;
                 }
-                QMessageBox QPushButton:hover {
+                QPushButton:hover {
                     background-color: #666666;
                     border-color: #007acc;
                 }
             """)
         else:
-            # Стиль для светлой темы
-            msg_box.setStyleSheet("""
-                QMessageBox {
+            dialog.setStyleSheet("""
+                QDialog {
                     background-color: #f5f7fa;
                     color: #2c3e50;
                 }
-                QMessageBox QLabel {
-                    color: #2c3e50;
+                QTabWidget::pane {
+                    border: 1px solid #d1d9e6;
+                    background-color: white;
                 }
-                QMessageBox QPushButton {
+                QTabBar::tab {
+                    background-color: #f8fafc;
+                    border: 1px solid #d1d9e6;
+                    border-bottom: none;
+                    padding: 8px 16px;
+                    margin-right: 2px;
+                    border-top-left-radius: 4px;
+                    border-top-right-radius: 4px;
+                }
+                QTabBar::tab:selected {
+                    background-color: white;
+                    border-bottom: 2px solid #3498db;
+                    font-weight: bold;
+                }
+                QTabBar::tab:hover {
+                    background-color: #e8f4fc;
+                }
+                QTextBrowser {
+                    background-color: white;
+                    color: #2c3e50;
+                    border: 1px solid #d1d9e6;
+                    border-radius: 4px;
+                    padding: 8px;
+                }
+                QPushButton {
                     background-color: #f8fafc;
                     color: #2c3e50;
                     border: 1px solid #d1d9e6;
@@ -1185,10 +1273,10 @@ ORDER BY er.department_name, er.rank_in_dept;"""
                     padding: 8px 16px;
                     font-size: 11px;
                 }
-                QMessageBox QPushButton:hover {
+                QPushButton:hover {
                     background-color: #e8f4fc;
                     border-color: #3498db;
                 }
             """)
-        
-        msg_box.exec()
+
+        dialog.exec()

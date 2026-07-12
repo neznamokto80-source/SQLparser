@@ -4,7 +4,7 @@ Factory for creating parser instances.
 
 from __future__ import annotations
 
-from .parser_strategy import ParserStrategy, SQLGlotParserStrategy
+from .parser_strategy import ParserStrategy, SQLGlotParserStrategy, ProgressiveSQLGlotParserStrategy
 from .sql_dialect import SQLDialect
 
 
@@ -16,7 +16,7 @@ class ParserFactory:
         """
         Create a parser instance of the requested type.
 
-        Currently only "sqlglot" is supported.
+        Currently supports "sqlglot" and "progressive" parser types.
 
         Args:
             parser_type: Parser type identifier (default: "sqlglot").
@@ -29,6 +29,9 @@ class ParserFactory:
         Raises:
             ValueError: If `parser_type` is not supported.
         """
-        if parser_type != "sqlglot":
-            raise ValueError(f"Неизвестный тип парсера: {parser_type}")
-        return SQLGlotParserStrategy(dialect=kwargs.get("dialect", SQLDialect.ORACLE))
+        dialect = kwargs.get("dialect", SQLDialect.ORACLE)
+        if parser_type == "sqlglot":
+            return SQLGlotParserStrategy(dialect=dialect)
+        if parser_type == "progressive":
+            return ProgressiveSQLGlotParserStrategy(dialect=dialect)
+        raise ValueError(f"Неизвестный тип парсера: {parser_type}")
