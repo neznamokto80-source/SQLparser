@@ -60,6 +60,54 @@ CHANGELOG_TEXT = """
 ChangeLog — SQL Metadata Parser
 
 ═══════════════════════════════════════════════
+ 2026-07-12 — Рефакторинг: устранение дублирования, тесты, pyproject.toml
+═══════════════════════════════════════════════
+
+models/sql_metadata.py — метод resolve_table_info()
+
+  • Новый метод SQLMetadata.resolve_table_info(column) — извлекает
+    схему, имя таблицы и тип объекта для колонки
+  • Устранено дублирование логики поиска таблицы (было 6+ мест)
+
+core/sql_preprocessor.py — единый источник шагов
+
+  • Новый метод _get_steps() — единый список шагов очистки
+  • preprocess() и preprocess_stepwise() используют один метод
+  • Добавлено логирование ошибок экспорта
+
+core/export_manager.py — логирование ошибок
+
+  • Все 4 стратегии экспорта (Excel, JSON, CSV, TXT) теперь логируют
+    ошибки через logger.error() вместо проглатывания исключений
+  • Использование resolve_table_info() вместо дублированного кода
+
+tests/test_progressive_parser.py — 12 новых тестов
+
+  • Парсинг сырого SQL без предобработки
+  • Автоисправление незакрытого CASE
+  • Автоисправление неполного BETWEEN
+  • Удаление Oracle hints и outer join
+  • Замена ODBC, CONVERT, @переменных
+  • Отсечение PL/SQL блоков
+  • Запись применённых шагов
+  • Сохранение Procedures из <Procedure> блоков
+
+pyproject.toml — конфигурация проекта
+
+  • Настройки pytest, ruff, setuptools
+  • Зависимости проекта
+
+core/column_analyzer.py — оптимизация импортов
+
+  • import re перенесён на уровень модуля (был внутри метода)
+
+app.py — исправления
+
+  • Версия приложения: 4.0 -> 5.0
+  • Версия sqlglot: >=24.0.0 -> >=28.6.0 (синхронизация с requirements.txt)
+  • Удалён неиспользуемый import os
+
+═══════════════════════════════════════════════
  2026-07-12 — Обновление v5.0: перенос улучшений из BO
 ═══════════════════════════════════════════════
 
@@ -83,48 +131,31 @@ core/sql_preprocessor.py — полная переработка препроц�
   • Удаление лишних ) и AS после алиасов подзапросов
   • Балансировка несбалансированных скобок
 
-  Оптимизации:
-  • Скомпилированные regex для производительности
-  • Генератор preprocess_stepwise() для пошаговой обработки
-
 core/parser_strategy.py — прогрессивный парсинг
 
   Новый класс ProgressiveSQLGlotParserStrategy:
   • Пошаговый парсинг: сырой SQL -> каждый шаг очистки
   • Автоисправление: несбалансированные скобки, CASE, BETWEEN
-  • Запоминание применённых шагов
 
 models/sql_metadata.py — расширение моделей
 
   • TableType.PROCEDURE — тип таблицы "Процедура"
-  • SQLMetadata.procedures — данные о процедурах
-  • SQLMetadata.table_functions — данные о TABLE() функциях
+  • SQLMetadata.procedures, table_functions
+  • SQLMetadata.resolve_table_info() — единый метод поиска таблиц
 
 core/column_analyzer.py — оптимизация производительности
 
   • _cte_names: Set[str] — быстрый поиск CTE
   • _table_name_index: Dict — O(1) поиск таблицы по имени
-  • Обработка catalog.schema для полных имён схем
 
-core/parser_factory.py — поддержка прогрессивного парсера
-
-  • Тип "progressive" в ParserFactory.create_parser()
-
-═══════════════════════════════════════════════
- 2026-06-01 — Оптимизация анализа колонок
-═══════════════════════════════════════════════
-
-  • _cte_names: Set[str] — быстрый поиск CTE
-  • _table_name_index: Dict[str, TableInfo] — O(1) поиск таблицы
-  • Обработка catalog.schema
+core/parser_factory.py — тип "progressive"
 
 ═══════════════════════════════════════════════
  2026-05-15 — Тип JOIN и Oracle outer join
 ═══════════════════════════════════════════════
 
-  • Добавлен join_type в TableInfo (LEFT, RIGHT, INNER, OUTER)
+  • Добавлен join_type в TableInfo
   • Детектирование Oracle outer join (+)
-  • TableType.PROCEDURE в enum типов таблиц
 
 ═══════════════════════════════════════════════
  2026-04-01 — Рефакторинг в модульную архитектуру
@@ -133,7 +164,6 @@ core/parser_factory.py — поддержка прогрессивного па�
   • Объединение sql_highlighter.py с main_window.py
   • Вынос текста справки в ui/help_text.py
   • Перемещение SQLDialect и SQLPreprocessor в core/
-  • Обновление импортов
 """
 
 USER_GUIDE_TEXT = """
@@ -318,6 +348,9 @@ SQL Metadata Parser v5.0
   • tests/test_sql_preprocessor.py — 5 тестов
   • tests/test_column_analysis.py — 5 тестов
   • tests/test_join_type_feature.py — 6 тестов
+  • tests/test_progressive_parser.py — 12 тестов
+
+ИТОГО: 28 тестов
 
 Разработчик: @BDV_80 (Береговой Дмитрий)
 Версия: 5.0 (PyQt6)

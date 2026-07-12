@@ -2,6 +2,7 @@
 Export manager for SQL metadata (Excel + JSON only).
 """
 import json
+import logging
 import os
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
@@ -9,6 +10,8 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from models.sql_metadata import SQLMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class ExportStrategy(ABC):
@@ -74,37 +77,12 @@ class ExcelExportStrategy(ExportStrategy):
                 # Лист "Колонки" (первый)
                 columns_data = []
                 for c in metadata.columns:
-                    table = c.table or ""
-                    schema = ""
-                    table_name_without_schema = table
-                    object_type = ""
-                    # Попробуем найти таблицу в метаданных
-                    if table:
-                        # Разделяем схему и имя, если есть точка
-                        if "." in table:
-                            parts = table.split(".", 1)
-                            schema = parts[0]
-                            table_name_without_schema = parts[1]
-                        # Ищем таблицу в метаданных (сначала по схеме, если нет - по имени)
-                        found_table = None
-                        if schema:
-                            found_table = metadata.get_table_by_name(table_name_without_schema, schema)
-                        if not found_table:
-                            # Поиск по имени без схемы (первая подходящая)
-                            for t in metadata.get_unique_tables():
-                                if t.name == table_name_without_schema:
-                                    found_table = t
-                                    break
-                        if found_table:
-                            object_type = found_table.table_type.value
-                            # Если схема не была извлечена из table, возьмём из found_table
-                            if not schema:
-                                schema = found_table.schema or ""
+                    schema, table_name, object_type = metadata.resolve_table_info(c)
                     columns_data.append({
                         "Колонка": c.column_name or "",
                         "Полное имя колонки": c.full_name or "",
                         "Схема": schema,
-                        "Таблица": table_name_without_schema,
+                        "Таблица": table_name,
                         "Алиас таблицы": c.table_alias or "",
                         "Тип объекта": object_type,
                         "Алиасы": c.get_aliases_str(),
@@ -216,15 +194,12 @@ class ExcelExportStrategy(ExportStrategy):
                         max_len = max(len(str(cell.value or "")) for cell in col)
                         ws.column_dimensions[col_letter].width = min(max_len + 2, 60)
             return True
-        except Exception:
+        except Exception as e:
+            logger.error("Ошибка экспорта в Excel: %s", e, exc_info=True)
             return False
 
     def get_file_extensions(self) -> List[str]:
-        """Возвращает поддерживаемые расширения файлов Excel.
-
-        Returns:
-            Список [".xlsx", ".xls"].
-        """
+        """Возвращает поддерживаемые расширения файлов Excel."""
         return [".xlsx", ".xls"]
 
 
@@ -268,15 +243,12 @@ class JSONExportStrategy(ExportStrategy):
             with open(file_path, "w", encoding="utf-8") as fp:
                 json.dump(payload, fp, ensure_ascii=False, indent=2)
             return True
-        except Exception:
+        except Exception as e:
+            logger.error("Ошибка экспорта в JSON: %s", e, exc_info=True)
             return False
 
     def get_file_extensions(self) -> List[str]:
-        """Возвращает поддерживаемые расширения файлов JSON.
-
-        Returns:
-            Список [".json"].
-        """
+        """Возвращает поддерживаемые расширения файлов JSON."""
         return [".json"]
 
 
@@ -328,34 +300,11 @@ class CSVExportStrategy(ExportStrategy):
             # Колонки
             columns_data = []
             for col in metadata.columns:
-                table = col.table or ""
-                schema = ""
-                table_name_without_schema = table
-                object_type = ""
-                if table:
-                    if "." in table:
-                        parts = table.split(".", 1)
-                        schema = parts[0]
-                        table_name_without_schema = parts[1]
-                    # Ищем таблицу в метаданных
-                    found_table = None
-                    if schema:
-                        found_table = metadata.get_table_by_name(table_name_without_schema, schema)
-                    if not found_table:
-                        # Поиск по имени без схемы (первая подходящая)
-                        for t in metadata.get_unique_tables():
-                            if t.name == table_name_without_schema:
-                                found_table = t
-                                break
-                    if found_table:
-                        object_type = found_table.table_type.value
-                        # Если схема не была извлечена из table, возьмём из found_table
-                        if not schema:
-                            schema = found_table.schema or ""
+                schema, table_name, object_type = metadata.resolve_table_info(col)
                 columns_data.append({
                     "Колонка": col.column_name,
                     "Схема": schema,
-                    "Таблица": table_name_without_schema,
+                    "Таблица": table_name,
                     "Алиас таблицы": col.table_alias or "",
                     "Тип объекта": object_type,
                     "Полное имя": col.full_name or "",
@@ -371,15 +320,12 @@ class CSVExportStrategy(ExportStrategy):
                     f.write("Колонка,Схема,Таблица,Алиас таблицы,Тип объекта,Полное имя,Тип вычисления,Использование,Количество использований\n")
 
             return True
-        except Exception:
+        except Exception as e:
+            logger.error("Ошибка экспорта в CSV: %s", e, exc_info=True)
             return False
 
     def get_file_extensions(self) -> List[str]:
-        """Возвращает поддерживаемые расширения файлов CSV.
-
-        Returns:
-            Список [".csv"].
-        """
+        """Возвращает поддерживаемые расширения файлов CSV."""
         return [".csv"]
 
 
@@ -428,15 +374,12 @@ class TextExportStrategy(ExportStrategy):
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(text)
             return True
-        except Exception:
+        except Exception as e:
+            logger.error("Ошибка экспорта в TXT: %s", e, exc_info=True)
             return False
 
     def get_file_extensions(self) -> List[str]:
-        """Возвращает поддерживаемые расширения файлов текста.
-
-        Returns:
-            Список [".txt"].
-        """
+        """Возвращает поддерживаемые расширения файлов текста."""
         return [".txt"]
 
 

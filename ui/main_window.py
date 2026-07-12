@@ -877,33 +877,9 @@ ORDER BY er.department_name, er.rank_in_dept;"""
             column_row = QTreeWidgetItem(self.columns_tree)
             column_row.setText(0, col.column_name or "")          # Колонка
             column_row.setText(1, col.full_name or "")            # Полное имя колонки
-            # Извлекаем схему, имя таблицы и тип объекта
-            table = col.table or ""
-            schema = ""
-            table_name_without_schema = table
-            object_type = ""
-            if table:
-                if "." in table:
-                    parts = table.split(".", 1)
-                    schema = parts[0]
-                    table_name_without_schema = parts[1]
-                # Ищем таблицу в метаданных (сначала по схеме, если нет - по имени)
-                found_table = None
-                if schema:
-                    found_table = self.metadata.get_table_by_name(table_name_without_schema, schema)
-                if not found_table:
-                    # Поиск по имени без схемы (первая подходящая)
-                    for t in self.metadata.get_unique_tables():
-                        if t.name == table_name_without_schema:
-                            found_table = t
-                            break
-                if found_table:
-                    object_type = found_table.table_type.value
-                    # Если схема не была извлечена из table, возьмём из found_table
-                    if not schema:
-                        schema = found_table.schema or ""
+            schema, table_name, object_type = self.metadata.resolve_table_info(col)
             column_row.setText(2, schema)                         # Схема
-            column_row.setText(3, table_name_without_schema)      # Таблица
+            column_row.setText(3, table_name)                     # Таблица
             column_row.setText(4, col.table_alias or "")          # Алиас таблицы
             column_row.setText(5, object_type)                    # Тип объекта
             column_row.setText(6, col.get_aliases_str())          # Алиасы
@@ -1067,36 +1043,12 @@ ORDER BY er.department_name, er.rank_in_dept;"""
             return
         rows = ["Колонка\tПолное имя\tСхема\tТаблица\tАлиас таблицы\tТип объекта\tАлиасы\tГде используется\tКоличество упоминаний"]
         for col in self.metadata.column_analysis:
-            # Извлекаем схему, имя таблицы и тип объекта (аналогично _populate_result_views)
-            table = col.table or ""
-            schema = ""
-            table_name_without_schema = table
-            object_type = ""
-            if table:
-                if "." in table:
-                    parts = table.split(".", 1)
-                    schema = parts[0]
-                    table_name_without_schema = parts[1]
-                # Ищем таблицу в метаданных
-                found_table = None
-                if schema:
-                    found_table = self.metadata.get_table_by_name(table_name_without_schema, schema)
-                if not found_table:
-                    # Поиск по имени без схемы (первая подходящая)
-                    for t in self.metadata.get_unique_tables():
-                        if t.name == table_name_without_schema:
-                            found_table = t
-                            break
-                if found_table:
-                    object_type = found_table.table_type.value
-                    # Если схема не была извлечена из table, возьмём из found_table
-                    if not schema:
-                        schema = found_table.schema or ""
+            schema, table_name, object_type = self.metadata.resolve_table_info(col)
             rows.append(
                 f"{col.column_name or ''}\t"
                 f"{col.full_name or ''}\t"
                 f"{schema}\t"
-                f"{table_name_without_schema}\t"
+                f"{table_name}\t"
                 f"{col.table_alias or ''}\t"
                 f"{object_type}\t"
                 f"{col.get_aliases_str()}\t"

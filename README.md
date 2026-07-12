@@ -154,6 +154,9 @@ print(f"Применённые шаги: {parser.last_applied_steps}")
 - `tests/test_sql_preprocessor.py` — тесты препроцессора SQL (5 тестов)
 - `tests/test_column_analysis.py` — тесты анализа колонок (5 тестов)
 - `tests/test_join_type_feature.py` — тесты извлечения типа JOIN (6 тестов)
+- `tests/test_progressive_parser.py` — тесты прогрессивного парсера (12 тестов)
+
+**Итого: 28 тестов**
 
 Запуск всех тестов:
 
@@ -172,6 +175,9 @@ pytest tests/ -v
 3. **O(1) поиск таблиц** — индексация через `_table_name_index` и `_cte_names`
 4. **Типы JOIN** — LEFT, RIGHT, INNER, OUTER, Oracle outer join (+)
 5. **Procedure и TABLE()** — обработка SAP BO XML-блоков и TABLE() функций
+6. **Устранение дублирования** — метод `resolve_table_info()` в SQLMetadata
+7. **Логирование ошибок** — все стратегии экспорта логируют ошибки
+8. **pyproject.toml** — конфигурация pytest, ruff, setuptools
 
 ## Сборка исполняемого файла (EXE)
 

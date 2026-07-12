@@ -7,13 +7,12 @@ from PyQt6.QtWidgets import QApplication
 
 # Проверка наличия обязательных библиотек
 required_modules = [
-    ("sqlglot", "sqlglot", "sqlglot>=24.0.0"),
+    ("sqlglot", "sqlglot", "sqlglot>=28.6.0"),
     ("openpyxl", "openpyxl", "openpyxl>=3.1.0"),
     ("pandas", "pandas", "pandas>=2.0.0"),
 ]
 
 import subprocess
-import os
 
 missing = []
 for module_name, package_name, requirement in required_modules:
@@ -48,7 +47,7 @@ from ui.main_window import MainWindow
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("SQL Metadata Parser")
-    app.setApplicationVersion("4.0")
+    app.setApplicationVersion("5.0")
     window = MainWindow()
     window.show()
     return app.exec()

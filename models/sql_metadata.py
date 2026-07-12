@@ -230,6 +230,44 @@ class SQLMetadata:
                 return table
         return None
 
+    def resolve_table_info(self, column: ColumnMetadata) -> tuple[str, str, str]:
+        """Извлекает схему, имя таблицы и тип объекта для колонки.
+
+        Устраняет дублирование логики поиска таблицы по имени/схеме,
+        которая ранее повторялась в main_window.py и export_manager.py.
+
+        Args:
+            column: Объект ColumnMetadata.
+
+        Returns:
+            Кортеж (schema, table_name, object_type).
+        """
+        table = column.table or ""
+        schema = ""
+        table_name = table
+        object_type = ""
+
+        if table:
+            if "." in table:
+                parts = table.split(".", 1)
+                schema = parts[0]
+                table_name = parts[1]
+
+            found = None
+            if schema:
+                found = self.get_table_by_name(table_name, schema)
+            if not found:
+                for t in self.get_unique_tables():
+                    if t.name == table_name:
+                        found = t
+                        break
+            if found:
+                object_type = found.table_type.value
+                if not schema:
+                    schema = found.schema or ""
+
+        return schema, table_name, object_type
+
     def get_statistics(self) -> Dict[str, Any]:
         """Вычисляет статистику по метаданным.
 

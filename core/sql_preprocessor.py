@@ -73,45 +73,9 @@ class SQLPreprocessor:
         if not sql:
             return sql
 
-        # Paren balance logging
-        def _bal(s):
-            return s.count('('), s.count(')'), s.count('(') - s.count(')')
-
-        initial = _bal(sql)
-        prev_diff = initial[2]
-
-        steps = [
-            ("remove_comments", self._remove_comments),
-            ("remove_oracle_hints", self._remove_oracle_hints),
-            ("remove_outer_join", self._remove_outer_join),
-            ("remove_go_separator", self._remove_go_separator),
-            ("strip_plsql_block", self._strip_plsql_block),
-            ("replace_procedure_syntax", self._replace_procedure_syntax),
-            ("replace_table_function", self._replace_table_function),
-            ("replace_odbc_functions", self._replace_odbc_functions),
-            ("replace_convert_functions", self._replace_convert_functions),
-            ("replace_variable_functions", self._replace_variable_functions),
-            ("replace_to_date_functions", self._replace_to_date_functions),
-            ("handle_star_operator", self._handle_star_operator),
-            ("remove_square_brackets", self._remove_square_brackets),
-            ("fix_case_expressions", self._fix_case_expressions),
-            ("fix_between_expressions", self._fix_between_expressions),
-            ("fix_truncated_expressions", self._fix_truncated_expressions),
-            ("fix_cte_issues", self._fix_cte_issues),
-            ("fix_if_expressions", self._fix_if_expressions),
-            ("fix_empty_parens", self._fix_empty_parens),
-            ("fix_extra_close_paren", self._fix_extra_close_paren),
-            ("fix_parens", self._fix_parens),
-            ("fix_common_issues", self._fix_common_issues),
-        ]
-
-        for step_name, step_fn in steps:
+        for _name, step_fn in self._get_steps():
             sql = step_fn(sql)
-            diff = sql.count('(') - sql.count(')')
-            if diff != prev_diff:
-                prev_diff = diff
 
-        final = _bal(sql)
         return sql
 
     def preprocess_stepwise(self, sql: str) -> Generator[Tuple[str, str], None, None]:
@@ -128,7 +92,18 @@ class SQLPreprocessor:
         if not sql:
             return
 
-        steps = [
+        prev_diff = sql.count('(') - sql.count(')')
+        for step_name, step_fn in self._get_steps():
+            sql = step_fn(sql)
+            diff = sql.count('(') - sql.count(')')
+            if diff != prev_diff:
+                prev_diff = diff
+            yield step_name, sql
+
+    def _get_steps(self) -> list:
+        """Возвращает список шагов очистки (name, method).
+        Единый источник для preprocess() и preprocess_stepwise()."""
+        return [
             ("remove_comments", self._remove_comments),
             ("remove_oracle_hints", self._remove_oracle_hints),
             ("remove_outer_join", self._remove_outer_join),
@@ -152,14 +127,6 @@ class SQLPreprocessor:
             ("fix_parens", self._fix_parens),
             ("fix_common_issues", self._fix_common_issues),
         ]
-
-        prev_diff = sql.count('(') - sql.count(')')
-        for step_name, step_fn in steps:
-            sql = step_fn(sql)
-            diff = sql.count('(') - sql.count(')')
-            if diff != prev_diff:
-                prev_diff = diff
-            yield step_name, sql
 
     def _remove_comments(self, sql: str) -> str:
         """Removes -- and /* */ comments, skipping those inside string literals.

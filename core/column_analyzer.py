@@ -4,6 +4,7 @@ Detailed column analyzer for SQL AST.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -65,7 +66,6 @@ class DetailedColumnAnalyzer:
             return {}
         sql = self.original_sql.upper()
         # Простой поиск: находим все вхождения "(+)" и извлекаем предшествующее имя столбца
-        import re
         # Шаблон для column(+) или table.column(+)
         pattern = r'([A-Z0-9_]+(?:\.[A-Z0-9_]+)?)\s*\(\+\)'
         matches = re.findall(pattern, sql)
